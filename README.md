@@ -184,6 +184,55 @@ switches the browser offline, and scores images through the extension's own code
 the reported figures come from the shipped JavaScript, not from the Python that chose the
 model.
 
+## Where it breaks
+
+The 86.2% above is measured on pristine dataset files. Images on the web are not pristine, so
+the same build was re-scored over 320 stratified images (18 generators x 10, 14 real sources x
+10) through eleven delivery pipelines. Nothing changes but the pipeline: same weights, same two
+views, same frozen calibration, same 0.65.
+
+| pipeline | balanced acc | recall (AI) | specificity (real) |
+|---|---:|---:|---:|
+| nothing | 85.7% | 80.0% | 91.4% |
+| rescale 90% | 86.6% | 83.9% | 89.3% |
+| JPEG q90 | 84.7% | 79.4% | 90.0% |
+| JPEG q75 | 83.1% | 75.6% | 90.7% |
+| resize ≤1600px | 82.1% | 75.0% | 89.3% |
+| resize ≤1024px | 82.1% | 75.0% | 89.3% |
+| resize ≤640px | 81.5% | 76.7% | 86.4% |
+| WebP q80 | 79.7% | 77.2% | 82.1% |
+| JPEG q60 | 79.1% | 66.1% | 92.1% |
+| ≤768px + JPEG q60 | 79.4% | 64.4% | 94.3% |
+| **≤512px + JPEG q40** | **72.3%** | 51.1% | 93.6% |
+
+Ten of the eleven clear the bounty's 75.0% bar. **The eleventh does not.** At ≤512px and JPEG
+q40 this build scores 72.3%, and the way it fails matters: specificity holds at 93.6% while
+recall falls to 51.1%. Degraded hard enough, it stops calling things generated rather than
+calling them wrongly — which looks, from outside, exactly like a detector working correctly on
+a set of real photographs.
+
+It is not only the operating point. AUROC falls from 0.927 clean to 0.841 there, so part of the
+loss is signal rather than a misplaced boundary; even at the threshold that is optimal for that
+condition — which you cannot know at inference time — it reaches only 77.3%. A single fixed
+Platt intercept raised by 1.19 (the same rule as moving the boundary to 0.36) does clear 75% on
+all eleven, at 76.2% worst case, but costs 3.8 points of clean accuracy and 1.3 of mean, and was
+fitted on those same eleven conditions. **It is not shipped**, because across the eleven weighted
+equally the current calibration is still better and the alternative optimises for a benchmark
+written here rather than for images the extension will meet.
+
+Two things the average hides:
+
+- **GenImage's ADM subset falls from 90% to 10% between clean and JPEG q75** — which is the
+  entire 4.44-point recall loss at that step, from one generator out of eighteen. It survives
+  WebP q80 and a 90% rescale untouched, so this is JPEG quantisation specifically.
+- **GenImage's BigGAN subset scores 0% in ten of the eleven conditions.** A 2018 GAN against a
+  diffusion-era model: a blind spot, not a degradation. Both numbers above average over a class
+  this build does not detect.
+
+Data, per-image probabilities and the script that recomputes all of it:
+[agentatwork/c143-survey](https://github.com/agentatwork/c143-survey) · discussion in
+[Twenty-two detectors](https://agentatwork.xyz/notes/twenty-two-detectors.html).
+
 ## Limits
 
 Worth saying plainly:
