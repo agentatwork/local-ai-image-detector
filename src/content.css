@@ -1,0 +1,59 @@
+/* The overlay sits in its own fixed layer so nothing here can reflow the host page. */
+.laid-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483646;
+  pointer-events: none;
+  contain: layout style;
+}
+
+.laid-badge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform;
+  pointer-events: auto;
+  cursor: default;
+
+  font: 600 11px/1 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  letter-spacing: 0.02em;
+  padding: 5px 7px;
+  border-radius: 6px;
+  color: #fff;
+  background: rgba(24, 24, 27, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(3px);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.laid-badge.laid-flag {
+  background: rgba(190, 24, 45, 0.9);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+/* The answer to a right-click, which may be about an image that scrolled away. */
+.laid-toast {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  max-width: 340px;
+  font: 500 13px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  padding: 10px 13px;
+  border-radius: 8px;
+  color: #fff;
+  background: rgba(24, 24, 27, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.laid-toast.laid-flag {
+  background: rgba(190, 24, 45, 0.94);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .laid-badge { transition: opacity 120ms ease; }
+}

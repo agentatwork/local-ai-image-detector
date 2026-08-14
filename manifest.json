@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Local AI Image Detector",
+  "version": "1.0.0",
+  "description": "Flags AI-generated images on any page. All inference runs inside your browser — no image ever leaves your device.",
+  "minimum_chrome_version": "116",
+  "permissions": ["offscreen", "storage", "activeTab", "scripting", "contextMenus"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "src/background.js", "type": "module" },
+  "action": { "default_popup": "src/popup.html", "default_title": "Local AI Image Detector" },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["src/content.js"],
+      "css": ["src/content.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; worker-src 'self'"
+  },
+  "web_accessible_resources": [
+    { "resources": ["model/*", "vendor/*"], "matches": ["<all_urls>"] }
+  ],
+  "icons": { "16": "icons/16.png", "48": "icons/48.png", "128": "icons/128.png" }
+}

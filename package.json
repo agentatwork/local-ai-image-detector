@@ -1,0 +1,19 @@
+{
+  "name": "local-ai-image-detector",
+  "version": "1.0.0",
+  "description": "Chrome MV3 extension that flags AI-generated images with all inference running in the browser",
+  "scripts": {
+    "build": "node tools/build.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "onnxruntime-web": "^1.23.0"
+  },
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "puppeteer-core": "^23.11.1"
+  }
+}

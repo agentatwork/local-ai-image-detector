@@ -1,0 +1,142 @@
+# Local AI Image Detector
+
+A Chrome extension that flags AI-generated images on the pages you visit. Every image is
+decoded and classified inside your browser. No cloud inference, no API, no localhost
+helper, nothing uploaded — the extension's only network request is for the image the page
+had already loaded.
+
+MIT licensed, including the model weights.
+
+---
+
+## Install
+
+Requires Node 18+ and Chrome 116+.
+
+```sh
+git clone https://github.com/agentatwork/local-ai-image-detector
+cd local-ai-image-detector
+npm install        # onnxruntime-web
+npm run build      # vendors the runtime, downloads + verifies the model weights
+```
+
+Then open `chrome://extensions`, turn on **Developer mode**, choose **Load unpacked**, and
+select the repository directory.
+
+`npm run build` is the only step that touches the network. After it finishes the directory
+is self-contained: disconnect entirely, restart Chrome, and the extension still works. It
+downloads one file — the model weights — from the pinned Hugging Face revision named in
+`tools/model.json`, and checks its SHA-256 before writing it. A build either reproduces the
+exact bytes these measurements were taken against or fails.
+
+## Use
+
+Browse. Images at least 128px on a side are scored as they scroll into view, and anything
+at or above 65% confidence gets a badge in its top-left corner. Click the toolbar icon to
+change the threshold, badge every image rather than only flagged ones, set the minimum
+size, or turn scoring off.
+
+To ask about one specific image — including one below the size cutoff, or with automatic
+scoring switched off entirely — right-click it and choose **Check this image for AI
+generation**.
+
+---
+
+## How it works
+
+```
+content.js     finds images in view        (IntersectionObserver, no page reflow)
+     |  url
+background.js  routes and caches by URL    (holds no model)
+     |
+offscreen.js   fetches + decodes           (one model instance for all tabs)
+     |  ImageBitmap
+preprocess.js  two views, 384x384 each     (own bicubic; the canvas is not asked)
+     |  tensor x2
+detector.js    ViT -> mean -> calibrated probability
+```
+
+Inference is a ViT-Small/16 at 384px —
+[Community Forensics](https://huggingface.co/papers/2411.04125) (CVPR 2025), trained on
+2.7M images from 4,803 different generators, which is why it holds up on generators it has
+never seen. It runs under WebGPU where the browser offers it and WebAssembly everywhere
+else, via `onnxruntime-web`.
+
+The model lives in an **offscreen document** rather than the service worker (which Chrome
+kills mid-inference and which has no WebGPU) or the content script (which would mean one
+copy of the model per tab).
+
+### Three things that matter more than the model
+
+**Calibrate the threshold.** Raw model output is not a probability. This one is nearly
+certain about real images and only mildly confident about generated ones, so reading it at
+a fixed 65% cutoff turns a good detector into a high-precision, low-recall one and throws
+away most of its accuracy. `tools/calibrate.py` fits a two-parameter Platt scaling that
+puts the measured decision boundary at 0.65. It is a monotone rescaling: it changes no
+ranking and no AUROC, only the number a reader sees.
+
+**Score every image twice.** The obvious intuition is that resizing destroys the evidence,
+since this classifier reads resampling artefacts, so you should crop at native resolution
+and never scale. Measured, that intuition is half wrong: the native crop is *worse* on its
+own than the model card's downscale, and nearest-neighbour upscaling of small images —
+which preserves the pixel grid perfectly — is worse still, because it does not preserve
+evidence so much as manufacture it, and it manufactures the same evidence for real photos
+as for generated ones (FFHQ-256 goes from 17% false positives to 92%). What does work is
+keeping both views and averaging them. The numbers are in [Measurements](#measurements).
+
+**Do the resize yourself.** `ctx.drawImage` into a smaller canvas resamples with whatever
+filter the compositor picks, which is neither documented nor stable across Chrome
+releases — and the choice of filter is part of what the model is reading. `preprocess.js`
+implements Pillow's bicubic explicitly: same support scaling, same normalisation, same
+rounding between passes. `tools/compare.py` checks that the shipped JavaScript and the
+Python that fitted the threshold agree on real images.
+
+---
+
+## Privacy
+
+- No image data leaves the device. There is no code path in this repository that sends
+  image bytes, pixel data, features, hashes or scores anywhere.
+- The only requests made are `GET`s for image URLs the page has already fetched, without
+  credentials.
+- Nothing is written to disk except your settings.
+- `<all_urls>` host permission exists so the extension can read cross-origin images. A
+  page-context canvas cannot read them back, which is why the fetch happens in the
+  extension.
+
+## Reproducing the numbers
+
+Every script that produced a number in this README is in [`tools/`](tools/). The eval images
+themselves are not redistributed here — the fetchers rebuild the set from public sources.
+
+```sh
+pip install onnxruntime pillow numpy
+python3 tools/fetch.py real bitmind/MS-COCO 30   # build an eval set from public datasets
+python3 tools/fetch_web.py 90                    # plus real images off the open web
+python3 tools/variants.py 12                     # which preprocessing keeps the evidence
+python3 tools/dump.py ship logits.json           # score the set the way the extension does
+python3 tools/calibrate.py logits.json           # fit the 0.65 operating point
+npm run build && node tools/verify.mjs data/ai verify.json --offline
+python3 tools/compare.py logits.json verify.json # Python vs shipped JavaScript
+```
+
+`tools/verify.mjs` is the one that counts. It loads the built extension into a real Chrome,
+switches the browser offline, and scores images through the extension's own code path — so
+the reported figures come from the shipped JavaScript, not from the Python that chose the
+model.
+
+## Limits
+
+Worth saying plainly:
+
+- A confident score is not proof. Heavily edited photographs, AI-upscaled real photos and
+  screenshots of generated images all sit in genuine grey area.
+- Small images carry less evidence. Below about 200px the score should be read as a hint.
+- Every detector degrades on generators released after its training data. This one
+  degrades more slowly than most, which is the whole reason it was chosen, but it still
+  degrades.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE). The model weights are MIT from
+`buildborderless/CommunityForensics-DeepfakeDet-ViT`. `onnxruntime-web` is MIT.

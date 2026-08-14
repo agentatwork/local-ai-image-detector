@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Local AI Image Detector</title>
+<link rel="stylesheet" href="popup.css">
+<body>
+  <header>
+    <h1>Local AI Image Detector</h1>
+    <p id="engine" class="dim">starting…</p>
+  </header>
+
+  <label class="row">
+    <input type="checkbox" id="enabled">
+    <span>Check images on pages I visit</span>
+  </label>
+
+  <label class="row">
+    <input type="checkbox" id="showAll">
+    <span>Badge every image, not just flagged ones</span>
+  </label>
+
+  <div class="row col">
+    <span>Flag at <b id="thrLabel">65%</b> confidence</span>
+    <input type="range" id="threshold" min="50" max="95" step="1">
+    <span class="dim">65% is the point the model is calibrated for. Higher means fewer
+      false alarms and more misses.</span>
+  </div>
+
+  <div class="row col">
+    <span>Smallest image to check: <b id="minLabel">128</b> px</span>
+    <input type="range" id="minSize" min="64" max="512" step="16">
+  </div>
+
+  <section id="page">
+    <h2>This page</h2>
+    <p id="pageSummary" class="dim">—</p>
+  </section>
+
+  <footer>
+    <p class="dim">Every image is decoded and scored on this device. The extension makes
+      no network requests except to load the images the page already loaded.</p>
+  </footer>
+  <script src="popup.js"></script>
+</body>
+</html>
