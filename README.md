@@ -130,12 +130,21 @@ Where it fails, honestly: leave-one-generator-out, the two worst held-out genera
 GenImage BigGAN (48.3%) and a 256px FLUX.1-dev subset (51.7%) — a GAN and a small-resolution
 diffusion crop, both near chance. Nine of the eighteen generators score above 95%.
 
-**Python/JavaScript parity.** `tools/verify.mjs` scores images through the built extension
-in a real headless Chrome with the browser switched offline; `tools/compare.py` diffs that
-against the Python. Per-view agreement is a median of 1.9e-06 (official) and 2.9e-08
-(native), worst case 2.7e-03, and zero decisions change at the threshold. The residual is
-Pillow's fixed-point coefficient rounding against JavaScript's float — not a different
-algorithm.
+**Python/JavaScript parity**, on all 1,020 images. `tools/verify.mjs` scores them through
+the built extension in a real headless Chrome with the browser switched offline;
+`tools/compare.py` diffs that against the Python. The extension's own scores reproduce the
+Python confusion matrix exactly — tp=427 fn=113 fp=32 tn=448, balanced accuracy 86.2037%
+on both sides. Per-view agreement is a median of 3.96e-07 (official view) and 6.56e-09
+(native crop), worst case 3.06e-02; AUROC 0.9246 either way. The residual is Pillow's
+fixed-point coefficient rounding against JavaScript's float — not a different algorithm.
+
+One image changes side: `nano-banana-00010.jpg`, Python 0.01618309 against JavaScript
+0.01618319. They are 1.0e-07 apart and the fitted threshold, 0.01618316, sits exactly
+between them — because the threshold was fitted *on* that sample, which is what a
+maximum-balanced-accuracy sweep does. It is a tie at the boundary rather than a
+disagreement, and it cancels: read through `raw`/`threshold_raw`, the JavaScript scores
+marginally higher (86.2037% against 86.1111%). An earlier 32-image spot check reported
+zero decision changes; that was true of those 32 images, and this is the full set.
 
 Speed: about 3.1 s per image, two views, on one WASM thread of a small cloud VM. WebGPU and
 real hardware are considerably faster; the extension only scores images that scroll into
