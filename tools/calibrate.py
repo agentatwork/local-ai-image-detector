@@ -47,23 +47,64 @@ def best_threshold(z, y):
     return float(cands[i]), float(scores[i])
 
 
-def platt(z, y, iters=100):
+def _sigmoid(x):
+    # branch-free and overflow-free; np.exp(-x) for x = -27 is fine, for x = +800 is not
+    out = np.empty_like(x)
+    pos = x >= 0
+    out[pos] = 1.0 / (1.0 + np.exp(-x[pos]))
+    e = np.exp(x[~pos])
+    out[~pos] = e / (1.0 + e)
+    return out
+
+
+def platt(z, y, iters=200, ridge=1e-3):
     """Logistic regression of label on logit, with the two classes weighted equally so
-    an unbalanced eval set does not drag the slope around."""
-    w = np.where(y == 1, 1.0 / max((y == 1).sum(), 1), 1.0 / max((y == 0).sum(), 1))
+    an unbalanced eval set does not drag the slope around.
+
+    Two details that are not optional here. The targets are Platt's smoothed ones rather
+    than hard 0/1 — with hard labels and a nearly separable score, the likelihood keeps
+    improving as the slope grows, and the fit runs off to a step function that reports
+    every image as exactly 0 or exactly 1. And each Newton step is line-searched against
+    the penalised objective, because once the slope is large enough to saturate every
+    probability the Hessian goes to zero and an undamped step is unbounded. A degenerate
+    slope still scores well on balanced accuracy — it puts the boundary in the same place
+    — but it throws away the only thing calibration was for, which is a number between
+    the two answers that means something.
+    """
+    n1, n0 = int((y == 1).sum()), int((y == 0).sum())
+    t = np.where(y == 1, (n1 + 1) / (n1 + 2), 1 / (n0 + 2))
+    w = np.where(y == 1, 1.0 / max(n1, 1), 1.0 / max(n0, 1))
     w = w / w.sum() * len(y)
-    a, b = 1.0, 0.0
     X = np.stack([z, np.ones_like(z)], 1)
+
+    def obj(v):
+        u = X @ v
+        # -weighted log-likelihood, computed via log1p(exp(-|u|)) so it never overflows
+        ll = w * (t * u - (np.maximum(u, 0) + np.log1p(np.exp(-np.abs(u)))))
+        return -ll.sum() + 0.5 * ridge * float(v @ v)
+
+    v = np.array([1.0, 0.0])
+    f = obj(v)
     for _ in range(iters):
-        p = 1 / (1 + np.exp(-(a * z + b)))
-        g = X.T @ (w * (p - y))
-        W = w * p * (1 - p) + 1e-9
-        H = X.T @ (X * W[:, None]) + 1e-6 * np.eye(2)
+        p = _sigmoid(X @ v)
+        g = X.T @ (w * (p - t)) + ridge * v
+        W = w * p * (1 - p)
+        H = X.T @ (X * W[:, None]) + (ridge + 1e-9) * np.eye(2)
         step = np.linalg.solve(H, g)
-        a, b = a - step[0], b - step[1]
-        if np.abs(step).max() < 1e-9:
+        s = 1.0
+        for _ in range(40):                      # backtrack until the objective drops
+            v2 = v - s * step
+            f2 = obj(v2)
+            if f2 <= f:
+                break
+            s /= 2
+        else:
+            break                                # no downhill direction left
+        moved = np.abs(v2 - v).max()
+        v, f = v2, f2
+        if moved < 1e-10:
             break
-    return float(a), float(b)
+    return float(v[0]), float(v[1])
 
 
 def leave_one_generator_out(z, y, src):
@@ -104,7 +145,7 @@ def main(path):
     # Put the measured decision boundary exactly at the threshold the bounty scores at.
     LOGIT_65 = float(np.log(0.65 / 0.35))
     b = LOGIT_65 - a * t_star
-    p = 1 / (1 + np.exp(-(a * z + b)))
+    p = _sigmoid(a * z + b)
     acc65, tpr65, tnr65 = balanced_acc(p, y, 0.65)
     print(f"\ncalibration  a={a:.6f}  b={b:.6f}")
     print(f"after calibration, at the bounty's 0.65: balanced acc {acc65*100:.1f}%  "

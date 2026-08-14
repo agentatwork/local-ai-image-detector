@@ -37,7 +37,10 @@ console.log(`staged ${files.length} images`);
 
 const browser = await puppeteer.launch({
   executablePath: CHROME,
-  headless: "shell" === "never" ? false : true,
+  headless: true,
+  // one evaluate() call scores the whole directory; the default 180 s protocol timeout
+  // would kill a WASM run of any size partway through and report it as a browser crash
+  protocolTimeout: 3_600_000,
   args: [
     `--disable-extensions-except=${ROOT}`,
     `--load-extension=${ROOT}`,
@@ -68,10 +71,15 @@ try {
   }
 
   const results = await page.evaluate(async (names) => {
-    const { load, score, status } = await import("./detector.js");
+    const { load, score, status, config } = await import("./detector.js");
     const t0 = performance.now();
     await load();
     const loadMs = performance.now() - t0;
+    // where 0.65 calibrated lands on the raw mean-of-views scale, so compare.py can count
+    // the disagreements that would actually change an answer rather than all of them
+    const { a, b } = config().calibration;
+    const lg = Math.log(0.65 / 0.35);
+    const thresholdRaw = 1 / (1 + Math.exp(-(lg - b) / a));
     const out = [];
     for (const n of names) {
       const t = performance.now();
@@ -87,7 +95,7 @@ try {
         out.push({ file: n, error: String(e && e.message || e) });
       }
     }
-    return { status: status(), loadMs, out };
+    return { status: status(), loadMs, threshold_raw: thresholdRaw, out };
   }, files);
 
   console.log(`backend ${results.status.backend}, model load ${Math.round(results.loadMs)} ms`);

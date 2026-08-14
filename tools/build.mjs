@@ -75,7 +75,6 @@ async function writeConfig() {
     model_id: MODEL.repo + "@" + MODEL.revision.slice(0, 12),
     weights: MODEL.weights,
     crop_size: MODEL.crop_size,
-    crops: MODEL.crops,
     image_mean: MODEL.image_mean,
     image_std: MODEL.image_std,
     calibration: MODEL.calibration,
