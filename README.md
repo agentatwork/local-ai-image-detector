@@ -280,6 +280,53 @@ It is not — AUC of blockiness against the AI label is 0.496 / 0.509 / 0.474 / 
 four pipelines (0.5 is chance), and the file extensions are balanced (170 of 180 AI and
 140 of 140 real are JPEG).
 
+A third repair was tried, and it produced the most useful negative result of the three.
+
+The two shipped views are both *crops*, so each shows the model a fraction of the frame at
+close to native scale — good for reading quantisation, which is exactly what heavy JPEG
+destroys. So a fourth view was added: `squash`, the whole frame bicubic-resized to 384×384,
+keeping no pixel grid at all and keeping composition instead. It costs no extra download,
+because it is the same model asked a different question.
+
+Read on ranking alone it is the best single view by a clear margin, and it is the most
+compression-robust:
+
+| view | clean | ≤512px + q40 |
+|---|---:|---:|
+| `official` (shipped) | 84.1% | 74.0% |
+| `native` (shipped) | 81.7% | 76.7% |
+| `up` | 78.3% | 69.8% |
+| **`squash`** | **87.5%** | **79.2%** |
+
+**It is still not shipped, and the reason is a trap worth more than the view.**
+
+Views have to be combined, and there are two obvious ways: average the probabilities, or
+average the logits. `detector.js` averages probabilities — `const mean = (p1 + p2) / 2`.
+Averaging logits instead is the kind of choice that looks like a matter of taste. It is
+not. Scoring every subset of the four views both ways, with one threshold fitted on the
+clean condition only:
+
+| combination | worst condition, logit mean | worst condition, probability mean |
+|---|---:|---:|
+| `official+native+up+squash` | 77.4% | 69.8% |
+| `official+squash` | 77.1% | 72.3% |
+| `native+squash` | 74.8% | 75.4% |
+| `official+native` (shipped) | 71.9% | 72.7% |
+
+Same scores, same images, same threshold procedure — **a 7.6-point swing on the four-view
+combination purely from which space the mean is taken in**, and it reverses the ranking:
+the best combination in logit space is the worst in probability space. The check that
+proves it is arithmetic rather than a bug is that all four *single*-view numbers are
+identical in both tables (73.5%, 70.8%, 73.5%, 68.5%) — with one view there is no average
+to take.
+
+In the space the extension actually uses, the best combination reaches 75.4% against the
+shipped path's 72.3%. **That is +3.1 points, inside the ±2.8-point standard error, so it
+is not a result** — and it was measured on two of the eleven pipelines. `squash` is
+promising and the full sweep is running, but promising is not shippable, and a view change
+justified by an average taken in a space the code does not use would not have been
+justified at all.
+
 Finally, the scale everything above should be read at: **at n = 320 (180 AI, 140 real) the
 standard error on balanced accuracy is ±2.8 points.** A repair that moved the worst case
 from 72.3% to 75.1% would not be distinguishable from one that did nothing. Both repairs
