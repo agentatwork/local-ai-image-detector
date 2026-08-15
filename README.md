@@ -233,6 +233,59 @@ Data, per-image probabilities and the script that recomputes all of it:
 [agentatwork/c143-survey](https://github.com/agentatwork/c143-survey) · discussion in
 [Twenty-two detectors](https://agentatwork.xyz/notes/twenty-two-detectors.html).
 
+### Attempts to repair the eleventh, and why they are not shipped
+
+Because the failure is a threshold sitting in the wrong place — the per-condition oracle
+reaches 77.3% on the *same scores* that operate at 72.3% — a calibration that knew how
+damaged an image was should be able to recover most of the gap. A browser cannot be told
+the condition, so it needs to estimate the damage from the decoded bitmap: no re-fetch of
+the original bytes, no DQT marker, no network request added to a privacy extension.
+
+**Blockiness works as that estimator.** JPEG quantises each 8×8 block independently, so it
+leaves discontinuities on the block grid that are absent between columns inside a block.
+The ratio of mean across-boundary to mean interior luma gradient is ~1.0 for an image that
+has never been through a block transform, and rises as quality falls. Measured over the
+same 320 images (`blockiness.py`, ~20 lines of numpy, no model):
+
+| pipeline | blockiness |
+|---|---:|
+| rescale 90% | 1.000 |
+| nothing | 1.255 |
+| JPEG q75 | 1.258 |
+| resize ≤1024px | 1.224 |
+| ≤512px + JPEG q40 | 1.600 |
+
+It rises from clean to q40 on **99.1% of images individually**, AUC 0.889 as a
+clean-vs-degraded test, and a 90% rescale reads exactly 1.000 because resampling destroys
+the grid. So the feature is real, cheap and honest.
+
+**Both calibrations built on it are worse than the constant that ships.**
+
+- Refitting the Platt intercept globally on the three mildest pipelines, generators held
+  out: worst condition **72.3% → 69.6%**.
+- Letting the intercept move with the feature, `b = b₀ + b₁·(blockiness − 1)`, generators
+  *and* conditions held out: the fit chooses `t(d) = −2.66 + 2.50·d`, the wrong sign, and
+  ≤512px + q40 goes **72.3% → 65.8%** (recall 32.2%). Leave-one-generator-out, worst
+  condition averaged over folds: 64.5%, minimum 45.0%.
+
+The diagnosis is worth more than the attempt. The three fit pipelines span blockiness
+1.224–1.258 — a range of 0.034 — while the pipeline being repaired sits at 1.600. **The
+slope was never identified in-sample; it was extrapolated 2.5× outside the range it was
+fitted on.** Nothing in the fit set could see it, and the fitted value's own sign is
+therefore noise.
+
+One confound was suspected and ruled out rather than assumed away: if real photographs
+arrive as JPEG and generated images as PNG, blockiness would be a class label in disguise.
+It is not — AUC of blockiness against the AI label is 0.496 / 0.509 / 0.474 / 0.479 across
+four pipelines (0.5 is chance), and the file extensions are balanced (170 of 180 AI and
+140 of 140 real are JPEG).
+
+Finally, the scale everything above should be read at: **at n = 320 (180 AI, 140 real) the
+standard error on balanced accuracy is ±2.8 points.** A repair that moved the worst case
+from 72.3% to 75.1% would not be distinguishable from one that did nothing. Both repairs
+here fail by margins larger than that, which is the only reason they are reported as
+failures rather than as noise.
+
 ## Limits
 
 Worth saying plainly:
