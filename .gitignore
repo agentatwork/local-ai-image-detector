@@ -3,3 +3,10 @@ vendor/
 model/
 verify.json
 *.log
+__pycache__/
+smoke.json
+verify_ns.json
+verify_all.OLD-*.json
+demo.png
+logits.json
+data/

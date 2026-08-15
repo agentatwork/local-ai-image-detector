@@ -9,7 +9,9 @@
  */
 
 const MIN_DEFAULT = 128;
-let settings = { enabled: true, threshold: 0.65, minSize: MIN_DEFAULT, showAll: false };
+// Mirrors DEFAULTS in background.js -- these are what applies for the few ms before storage
+// answers, so a mismatch shows up as a flicker rather than as an error.
+let settings = { enabled: true, threshold: 0.65, minSize: MIN_DEFAULT, showAll: true };
 
 const seen = new WeakMap();          // img -> {url, state}
 let layer = null;
@@ -46,7 +48,13 @@ function badgeFor(img, result, force = false) {
     badges.set(img, b);
   }
   b.classList.toggle("laid-flag", flagged);
-  b.textContent = flagged ? `AI ${pct}%` : `real ${100 - pct}%`;
+  // The bounty fixes the flag boundary at 0.65, which is above 0.5, so there is a band where
+  // the verdict is "not flagged" and P(real) is still under half. Printing "real 37%" there is
+  // true and reads as a contradiction, so that band says what it actually is. Every label
+  // names the quantity it reports; none of them silently switch scales.
+  b.textContent = flagged ? `AI ${pct}%`
+    : pct >= 50 ? `unsure ${pct}% AI`
+    : `real ${100 - pct}%`;
   b.title = flagged
     ? `Scored ${pct}% likely AI-generated (threshold ${Math.round(settings.threshold * 100)}%). ` +
       `Checked entirely on this device.`

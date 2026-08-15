@@ -1,19 +1,20 @@
 /*
- * The detector itself: decode -> two views -> ViT -> calibrated probability.
+ * The detector itself: decode -> N views -> ViT -> calibrated probability.
  *
  * Everything here runs in the offscreen document, which is an ordinary extension page,
  * so it gets WebGPU when the machine has it and WASM everywhere else. Nothing in this
  * file touches the network except the one-time load of the bundled model file off disk.
  *
- * Every image is scored twice, because the two views disagree in useful ways: the
- * downscaled view sees the whole frame and the native crop sees pixels that have not
- * been resampled by anyone. Their mean beats either one on the eval set, and beats it on
- * large images and small images separately — see tools/analyze.py. The preprocessing
+ * Every image is scored once per view and the probabilities are averaged, because the
+ * views disagree in useful ways: a crop at native scale reads quantisation, a squash of
+ * the whole frame reads composition, and the conditions that destroy one leave the other
+ * intact. Which views to average is a measured choice and lives in model/config.json, so
+ * this file iterates whatever it is given rather than naming two. The preprocessing
  * itself lives in preprocess.js and is deliberately hand-written rather than handed to
  * the canvas, because which resize filter ran is part of what this model is reading.
  */
 import * as ort from "../vendor/ort.bundle.min.mjs";
-import { viewOfficial, viewNative, toCHW, CROP } from "./preprocess.js";
+import { viewOfficial, viewNative, viewSquash, toCHW, CROP } from "./preprocess.js";
 
 ort.env.wasm.wasmPaths = chrome.runtime.getURL("vendor/");
 ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 1);
@@ -41,6 +42,11 @@ export function load() {
       // preprocess.js is written around one crop size; a config that disagrees would
       // silently feed the model a tensor of the wrong shape or the wrong content.
       throw new Error(`model/config.json wants crop ${cfg.crop_size}, preprocess.js is ${CROP}`);
+    }
+    if (!Array.isArray(cfg.views) || !cfg.views.every((n) => VIEWS[n])) {
+      // A config naming a view this build does not have would otherwise average a
+      // shorter list and silently score every image against the wrong calibration.
+      throw new Error(`model/config.json names unknown views: ${JSON.stringify(cfg.views)}`);
     }
     const url = chrome.runtime.getURL("model/" + cfg.weights);
     const buf = new Uint8Array(await (await fetch(url)).arrayBuffer());
@@ -88,10 +94,16 @@ function calibrate(p) {
   return sigmoid(a * Math.log(q / (1 - q)) + b);
 }
 
+// Which views to average is a measured choice, not a structural one, so it lives in
+// model/config.json next to the calibration that was fitted for it. The two travel
+// together: a calibration fitted for one view set is meaningless applied to another.
+const VIEWS = { official: viewOfficial, native: viewNative, squash: viewSquash };
+
 export async function score(bitmap) {
   if (!session) await load();
-  const p1 = await runView(viewOfficial(bitmap));
-  const p2 = await runView(viewNative(bitmap));
-  const mean = (p1 + p2) / 2;
-  return { probability: calibrate(mean), raw: mean, views: [p1, p2] };
+  const names = cfg.views;
+  const ps = [];
+  for (const n of names) ps.push(await runView(VIEWS[n](bitmap)));
+  const mean = ps.reduce((s, p) => s + p, 0) / ps.length;
+  return { probability: calibrate(mean), raw: mean, views: ps, viewNames: names };
 }

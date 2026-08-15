@@ -72,7 +72,11 @@ export const DEFAULTS = {
   enabled: true,
   threshold: 0.65,        // the operating point the model is calibrated for
   minSize: 128,           // px; below this an image is furniture, not content
-  showAll: false,         // badge every image, not just the ones over threshold
+  // On by default: every image that gets scored says what it scored. Badging only the
+  // images over threshold is quieter, and it is also the version where a real photograph
+  // and an image the detector never looked at are indistinguishable to the reader -- which
+  // is the difference between a confidence score and a flag. The popup turns it off.
+  showAll: true,
 };
 
 const MENU_ID = "laid-check-image";

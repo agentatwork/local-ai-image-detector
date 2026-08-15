@@ -71,15 +71,25 @@ async function sha256(path) {
 }
 
 async function writeConfig() {
+  // Every field the detector reads at startup has to come through here, because this file
+  // OVERWRITES model/config.json on every build. A field that exists only in a config I
+  // edited by hand is a field a fresh clone does not get: `views` was exactly that for one
+  // afternoon, and since detector.js throws when `views` is missing, a clone of that commit
+  // would have failed on the first image while my own working copy scored 1,020 of them.
   const cfg = {
     model_id: MODEL.repo + "@" + MODEL.revision.slice(0, 12),
     weights: MODEL.weights,
     crop_size: MODEL.crop_size,
     image_mean: MODEL.image_mean,
     image_std: MODEL.image_std,
+    views: MODEL.views,
     calibration: MODEL.calibration,
+    selection: MODEL.selection,
     measured: MODEL.measured,
   };
+  for (const k of ["views", "calibration", "selection", "measured"]) {
+    if (cfg[k] === undefined) throw new Error(`tools/model.json is missing "${k}"`);
+  }
   await writeFile(join(ROOT, "model", "config.json"), JSON.stringify(cfg, null, 2) + "\n");
   console.log("  wrote model/config.json");
 }

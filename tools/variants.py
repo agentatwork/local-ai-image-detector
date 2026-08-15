@@ -12,6 +12,7 @@ Variants:
   native     centre crop 384 at native resolution           (no resampling at all)
   native5    five 384 crops at native res, max-pooled       (centre + four corners)
   up         small images upscaled 2x nearest, then crop     (preserve the pixel grid)
+  squash     whole frame -> 384x384, aspect abandoned        (composition, not artefacts)
 
   python3 variants.py [n_per_source]
 """
@@ -96,8 +97,24 @@ def variant_ship(im):
     return [norm(crop(im, l, t)) for l, t in pts]
 
 
+def variant_squash(im):
+    """The whole frame resized to the crop, aspect ratio abandoned.
+
+    Every other view here is a crop, so each shows the model a fraction of the image at
+    close to native scale — good for reading quantisation, which is exactly the evidence
+    heavy JPEG and CMS downscaling destroy. This view keeps no pixel grid at all and
+    instead keeps everything else: the full composition, at the largest downscale in the
+    set. It is what holds the worst condition up; see ../../minimax.py.
+
+    Must stay byte-identical in behaviour to `viewSquash` in src/preprocess.js — that is
+    what compare.py checks, and the two are only the same detector if it passes.
+    """
+    return [norm(im.convert("RGB").resize((S, S), Image.BICUBIC))]
+
+
 VARIANTS = dict(official=variant_official, native=variant_native,
-                native5=variant_native5, up=variant_up, ship=variant_ship)
+                native5=variant_native5, up=variant_up, ship=variant_ship,
+                squash=variant_squash)
 
 
 def main(n=15):

@@ -9,6 +9,7 @@ a crop at the image's own resolution) and averages them. That pairing is worth 2
 of balanced accuracy over either view alone; see analyze.py.
 
   python3 dump.py logits.json official native
+  python3 dump.py logits_ns.json native squash --every 8    # parity sample, not a fit
 
 Sources are recorded per image because the honest way to fit a threshold is to hold out
 whole generators, not random images; see calibrate.py.
@@ -24,7 +25,20 @@ Image.MAX_IMAGE_PIXELS = 200_000_000
 
 
 def main(out="logits.json", *vnames):
-    vnames = list(vnames) or ["official", "native"]
+    # `--every N` keeps every Nth image. Fitting a threshold wants the whole set, but the
+    # JS/Python parity check does not: it compares the two implementations image by image,
+    # so a strided sample answers the same question at a fraction of the CPU. The stride is
+    # applied after the real/ai concatenation, so it walks both classes and every source in
+    # turn rather than taking a prefix.
+    every = 1
+    vnames = list(vnames)
+    for i, a in enumerate(vnames):
+        if a.startswith("--every"):
+            every = int(a.split("=", 1)[1]) if "=" in a else int(vnames[i + 1])
+            vnames = [x for j, x in enumerate(vnames)
+                      if j != i and not (("=" not in a) and j == i + 1)]
+            break
+    vnames = vnames or ["official", "native"]
     o = ort.SessionOptions()
     o.intra_op_num_threads = 1
     sess = ort.InferenceSession("models/cf2/model.onnx",
@@ -36,6 +50,9 @@ def main(out="logits.json", *vnames):
         fs = sorted(glob.glob(f"data/{lab}/*"))
         files += fs
         labels += [y] * len(fs)
+
+    if every > 1:
+        files, labels = files[::every], labels[::every]
 
     probs = {v: [] for v in vnames}
     sources = []

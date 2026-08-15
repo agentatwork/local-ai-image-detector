@@ -1,0 +1,24 @@
+{
+ "views": [
+  "native",
+  "squash"
+ ],
+ "n": 1020,
+ "n_ai": 540,
+ "n_real": 480,
+ "balanced_accuracy_at_0_65": 0.8619212962962963,
+ "recall_ai": 0.8592592592592593,
+ "specificity_real": 0.8645833333333334,
+ "auroc": 0.9340856481481481,
+ "uncalibrated_at_0_65": 0.675,
+ "raw_threshold_equivalent": 0.03548155987567575,
+ "leave_one_generator_out": 0.8642361111111112,
+ "logo_worst": {
+  "source": "GenImage_BigGAN",
+  "acc": 0.5020833333333333
+ },
+ "by_size": {
+  "min_side_ge_384": 0.9084269662921348,
+  "min_side_lt_384": 0.8038145539906103
+ }
+}

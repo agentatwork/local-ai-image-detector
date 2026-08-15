@@ -20,7 +20,6 @@ import numpy as np
 def main(py_path="logits.json", js_path="ext/verify.json"):
     py = json.load(open(py_path))
     js = json.load(open(js_path))
-    views = py["variants"]                      # e.g. ["official", "native"]
     by_file = {f: i for i, f in enumerate(py["files"])}
 
     rows = [(r["file"], by_file[r["file"]], r)
@@ -29,15 +28,26 @@ def main(py_path="logits.json", js_path="ext/verify.json"):
         print("no overlap between the two runs")
         return 1
 
-    print(f"{len(rows)} images scored by both\n")
-    for v, k in enumerate(views):
+    # Which views the extension ran is model/config.json's choice, so pair them up by name
+    # rather than by position. Comparing views[0] to views[0] was safe while both sides
+    # were hard-coded to official+native; with a configurable list it would silently
+    # compare two different views and report the mismatch as a parity failure.
+    names = js["out"][0].get("viewNames") or py["variants"]
+    missing = [k for k in names if k not in py["probs"]]
+    if missing:
+        print(f"the JS ran views the Python file has no scores for: {missing}\n"
+              f"  rerun: python3 tools/dump.py logits.json {' '.join(names)}")
+        return 1
+
+    print(f"{len(rows)} images scored by both, views {'+'.join(names)}\n")
+    for v, k in enumerate(names):
         a = np.array([py["probs"][k][i] for _, i, _ in rows])
         b = np.array([r["views"][v] for _, _, r in rows])
         d = np.abs(a - b)
         print(f"  view {k:9s} |diff| median {np.median(d):.2e}  p95 {np.quantile(d,.95):.2e}"
               f"  max {d.max():.2e}")
 
-    a = np.array([np.mean([py["probs"][k][i] for k in views]) for _, i, _ in rows])
+    a = np.array([np.mean([py["probs"][k][i] for k in names]) for _, i, _ in rows])
     b = np.array([r["raw"] for _, _, r in rows])
     d = np.abs(a - b)
     print(f"  mean of views |diff| median {np.median(d):.2e}  max {d.max():.2e}")

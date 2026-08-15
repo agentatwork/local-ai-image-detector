@@ -1,5 +1,5 @@
 /*
- * Getting an image into the model, twice, without letting the browser decide how.
+ * Getting an image into the model, once per view, without letting the browser decide how.
  *
  * The detector reads resampling and quantisation artefacts, so the resize filter is not
  * an implementation detail — it is part of the measurement. `ctx.drawImage` into a
@@ -9,13 +9,16 @@
  * same support scaling, same coefficient normalisation, same rounding between passes.
  * `tools/compare.py` checks that claim against the Python on real images.
  *
- * Two views come out of this file:
+ * Three views come out of this file:
  *
  *   official   shortest edge to 440, bicubic, centre crop 384   — sees the whole frame
  *   native     centre crop 384 at the image's own resolution    — sees the actual pixels
+ *   squash     whole frame to 384x384, aspect abandoned         — sees the composition
  *
- * Averaging them is worth 2.4 points of balanced accuracy over either alone, and neither
- * ordering nor threshold survives dropping one; see tools/analyze.py.
+ * Which subset is actually averaged is model/config.json's business, not this file's: all
+ * three are exported and the detector runs the ones it is told to. See tools/analyze.py
+ * for what each is worth on clean images, and tools/minimax.py for the worst condition,
+ * which is the quantity that picked the shipping pair.
  */
 
 const CROP = 384;
@@ -132,7 +135,7 @@ function resizeWindow(inW, inH, outW, outH, cropX, cropY, readRows) {
   return out;
 }
 
-/* ---------- the two views ---------- */
+/* ---------- the views ---------- */
 
 function ctxFor(w, h) {
   const c = new OffscreenCanvas(w, h);
@@ -156,6 +159,28 @@ export function viewOfficial(bmp) {
     return ctx.getImageData(0, 0, w, y1 - y0).data;
   };
   return resizeWindow(w, h, outW, outH, cropX, cropY, readRows);
+}
+
+/**
+ * The whole frame squashed to 384x384, aspect ratio abandoned. Same Pillow bicubic as
+ * `official`, just with the output size equal to the crop, so there is no crop at all:
+ * every pixel of the image contributes and none of the composition is thrown away.
+ *
+ * It is here because the other two views are crops at close to native scale, which is
+ * what makes them good at reading quantisation — and quantisation is precisely the
+ * evidence that heavy JPEG and CMS downscaling destroy. At this downsample there are no
+ * artefacts left to lose, so the model has to read composition instead, and that turns
+ * out to hold up where the crops fall away. It costs one extra forward pass and no extra
+ * download. See tools/minimax.py for what it is worth on the worst condition.
+ */
+export function viewSquash(bmp) {
+  const w = bmp.width, h = bmp.height;
+  const readRows = (y0, y1) => {
+    const ctx = ctxFor(w, y1 - y0);
+    ctx.drawImage(bmp, 0, y0, w, y1 - y0, 0, 0, w, y1 - y0);
+    return ctx.getImageData(0, 0, w, y1 - y0).data;
+  };
+  return resizeWindow(w, h, CROP, CROP, 0, 0, readRows);
 }
 
 // numpy's 'reflect': mirror without repeating the edge pixel, folded as many times as
